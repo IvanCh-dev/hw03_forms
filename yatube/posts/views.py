@@ -1,3 +1,4 @@
+from threading import local
 from django.core.paginator import Paginator
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
@@ -8,11 +9,15 @@ from .forms import PostForm
 DISPLAYED_POSTS = 10
 
 
-def index(request):
-    post_list = Post.objects.all()
+def get_page(request, post_list):
     paginator = Paginator(post_list, DISPLAYED_POSTS)
     page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
+    return paginator.get_page(page_number)
+
+
+def index(request):
+    post_list = Post.objects.all()
+    page_obj = get_page(request, post_list)
     context = {
         'page_obj': page_obj,
     }
@@ -21,10 +26,8 @@ def index(request):
 
 def group_posts(request, slug):
     group = get_object_or_404(Group, slug=slug)
-    posts = group.posts.all()
-    paginator = Paginator(posts, DISPLAYED_POSTS)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
+    post_list = group.posts.all()
+    page_obj = get_page(request, post_list)
     context = {
         'group': group,
         'page_obj': page_obj,
@@ -34,27 +37,19 @@ def group_posts(request, slug):
 
 def profile(request, username):
     user = get_object_or_404(User, username=username)
-    posts = user.posts.all()
-    posts_count = posts.count()
-    paginator = Paginator(posts, DISPLAYED_POSTS)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
+    post_list = user.posts.all()
+    page_obj = get_page(request, post_list)
     context = {
         'page_obj': page_obj,
         'author': user,
-        'posts_count': posts_count,
     }
     return render(request, 'posts/profile.html', context)
 
 
 def post_detail(request, post_id):
     post = get_object_or_404(Post, id=post_id)
-    title = post.text[:30]
-    posts_count = post.author.posts.count()
     context = {
         'post': post,
-        'title': title,
-        'posts_count': posts_count,
     }
     return render(request, 'posts/post_detail.html', context)
 
@@ -76,17 +71,15 @@ def post_create(request):
 @login_required
 def post_edit(request, post_id):
     post = get_object_or_404(Post, id=post_id)
-    form = PostForm(instance=post)
+    form = PostForm(request.POST or None)
     context = {
         'is_edit': True,
         'form': form,
     }
-    if request.method == 'POST':
-        form = PostForm(request.POST, instance=post)
-        if form.is_valid():
-            form.save()
-            return redirect('posts:post_detail', post_id=post_id)
-    elif request.method == 'GET':
-        if request.user != post.author:
-            return redirect('posts:post_detail', post_id=post_id)
+    form = PostForm(request.POST, instance=post)
+    if form.is_valid():
+        form.save()
+        return redirect('posts:post_detail', post_id=post_id)
+    if request.user != post.author:
+        return redirect('posts:post_detail', post_id=post_id)
     return render(request, 'posts/create_post.html', context)
